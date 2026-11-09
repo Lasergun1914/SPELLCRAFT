@@ -1,810 +1,794 @@
-// ============================================
-// SPELLCRAFT 0.1 – 3D OPEN WORLD
-// Babylon.js
-// ============================================
+// ==========================================
+// SPELLCRAFT CHESS
+// Elfenreich gegen Schattenhorde
+// Babylon.js + Chess.js
+// ==========================================
 
-(() => {
-    "use strict";
+"use strict";
 
-    const canvas = document.getElementById("gameCanvas");
+const canvas = document.getElementById("gameCanvas");
 
-    const engine = new BABYLON.Engine(canvas, true, {
-        preserveDrawingBuffer: true,
-        stencil: true
-    });
+const engine = new BABYLON.Engine(canvas, true);
+const scene = new BABYLON.Scene(engine);
 
-    const scene = new BABYLON.Scene(engine);
-    scene.clearColor = new BABYLON.Color4(0.48, 0.68, 0.86, 1);
-    scene.fogMode = BABYLON.Scene.FOGMODE_EXP;
-    scene.fogColor = new BABYLON.Color3(0.48, 0.68, 0.86);
-    scene.fogDensity = 0.0025;
+scene.clearColor = new BABYLON.Color4(0.035, 0.065, 0.07, 1);
 
-    // LICHT
-    const hemi = new BABYLON.HemisphericLight(
-        "Himmelslicht",
-        new BABYLON.Vector3(0, 1, 0),
-        scene
+// LICHT
+
+const light = new BABYLON.HemisphericLight(
+    "light",
+    new BABYLON.Vector3(0, 1, 0),
+    scene
+);
+
+light.intensity = 0.9;
+
+const sun = new BABYLON.DirectionalLight(
+    "sun",
+    new BABYLON.Vector3(-1, -2, 1),
+    scene
+);
+
+sun.position = new BABYLON.Vector3(10, 20, -10);
+sun.intensity = 1.2;
+
+// KAMERA
+
+const camera = new BABYLON.ArcRotateCamera(
+    "camera",
+    -Math.PI / 2,
+    0.85,
+    15,
+    new BABYLON.Vector3(0, 0, 0),
+    scene
+);
+
+camera.attachControl(canvas, true);
+
+camera.lowerRadiusLimit = 11;
+camera.upperRadiusLimit = 22;
+camera.lowerBetaLimit = 0.45;
+camera.upperBetaLimit = 1.25;
+camera.wheelPrecision = 50;
+camera.panningSensibility = 0;
+
+// MATERIALIEN
+
+function makeMaterial(name, color, emissive = "#000000") {
+    const mat = new BABYLON.StandardMaterial(name, scene);
+
+    mat.diffuseColor = BABYLON.Color3.FromHexString(color);
+    mat.emissiveColor = BABYLON.Color3.FromHexString(emissive);
+    mat.specularColor = new BABYLON.Color3(0.4, 0.4, 0.4);
+
+    return mat;
+}
+
+const materials = {
+    boardLight: makeMaterial("Helles Feld", "#B8A47A"),
+    boardDark: makeMaterial("Dunkles Feld", "#405B4B"),
+
+    elf: makeMaterial("Elfenrüstung", "#397D55"),
+    elfGold: makeMaterial("Elfisches Gold", "#D8B65C"),
+    elfSkin: makeMaterial("Elfenhaut", "#D7B99A"),
+
+    shadow: makeMaterial("Schattenrüstung", "#49345D"),
+    shadowGold: makeMaterial("Schattenmetall", "#A77BCE"),
+    shadowSkin: makeMaterial("Orkhaut", "#657B45"),
+
+    base: makeMaterial("Sockel", "#24262A"),
+    selected: makeMaterial("Auswahl", "#E7D35B", "#6B5810"),
+    possible: makeMaterial("Möglicher Zug", "#69DDA0", "#205D36"),
+
+    ground: makeMaterial("Boden", "#263C32"),
+    decoration: makeMaterial("Dekoration", "#5E755C")
+};
+
+// BODEN
+
+const ground = BABYLON.MeshBuilder.CreateGround(
+    "ground",
+    { width: 40, height: 40 },
+    scene
+);
+
+ground.position.y = -0.65;
+ground.material = materials.ground;
+
+// SCHACHBRETT
+
+const board = [];
+
+const squareSize = 1.2;
+const boardStart = -4.2;
+
+function squarePosition(row, col) {
+    return new BABYLON.Vector3(
+        boardStart + col * squareSize + squareSize / 2,
+        0,
+        boardStart + row * squareSize + squareSize / 2
     );
-    hemi.intensity = 0.85;
+}
 
-    const sun = new BABYLON.DirectionalLight(
-        "Sonnenlicht",
-        new BABYLON.Vector3(-0.5, -1, 0.35),
-        scene
-    );
-    sun.position = new BABYLON.Vector3(50, 80, -30);
-    sun.intensity = 1.15;
+for (let row = 0; row < 8; row++) {
+    board[row] = [];
 
-    // MATERIALIEN
-    function material(name, color) {
-        const m = new BABYLON.StandardMaterial(name, scene);
-        m.diffuseColor = BABYLON.Color3.FromHexString(color);
-        m.specularColor = new BABYLON.Color3(0.08, 0.08, 0.08);
-        return m;
-    }
-
-    const grassMat = material("Wiese", "#527C43");
-    const darkGrassMat = material("Dunkles Gras", "#3E6338");
-    const trunkMat = material("Baumrinde", "#60412D");
-    const leafMat = material("Baumkronen", "#244D35");
-    const leafLightMat = material("Helle Baumkronen", "#356846");
-    const stoneMat = material("Stein", "#777D82");
-    const castleMat = material("Burgstein", "#999A9A");
-    const roofMat = material("Dach", "#493B46");
-    const waterMat = material("See", "#287E9C");
-    const robeMat = material("Magierrobe", "#342A62");
-    const robeLightMat = material("Robenkante", "#8C6DD0");
-    const skinMat = material("Gesicht", "#D5A77F");
-    const hatMat = material("Zauberhut", "#211B43");
-    const goldMat = material("Gold", "#E6BD63");
-    const woodMat = material("Holz", "#76502E");
-
-    // LANDSCHAFT
-    const ground = BABYLON.MeshBuilder.CreateGround(
-        "GrosseWiese",
-        { width: 420, height: 420, subdivisions: 40 },
-        scene
-    );
-    ground.material = grassMat;
-
-    for (let i = 0; i < 70; i++) {
-        const patch = BABYLON.MeshBuilder.CreateDisc(
-            "Grasfleck",
-            { radius: 2 + Math.random() * 5, tessellation: 16 },
-            scene
-        );
-
-        patch.rotation.x = Math.PI / 2;
-        patch.position.set(
-            (Math.random() - 0.5) * 390,
-            0.025,
-            (Math.random() - 0.5) * 390
-        );
-        patch.material = darkGrassMat;
-        patch.isPickable = false;
-    }
-
-    // HÜGEL
-    for (let i = 0; i < 24; i++) {
-        const hill = BABYLON.MeshBuilder.CreateSphere(
-            "Hugel",
+    for (let col = 0; col < 8; col++) {
+        const tile = BABYLON.MeshBuilder.CreateBox(
+            "square_" + row + "_" + col,
             {
-                diameterX: 18 + Math.random() * 24,
-                diameterY: 5 + Math.random() * 10,
-                diameterZ: 18 + Math.random() * 24,
-                segments: 12
+                width: squareSize,
+                height: 0.22,
+                depth: squareSize
             },
             scene
         );
 
-        hill.position.set(
-            (Math.random() - 0.5) * 360,
-            -3.3,
-            (Math.random() - 0.5) * 360
-        );
+        tile.position = squarePosition(row, col);
+        tile.position.y = -0.12;
 
-        hill.material = i % 3 === 0 ? darkGrassMat : grassMat;
-        hill.isPickable = false;
+        tile.material =
+            (row + col) % 2 === 0
+                ? materials.boardLight
+                : materials.boardDark;
+
+        tile.isPickable = true;
+
+        tile.metadata = {
+            row,
+            col,
+            square: "abcdefgh"[col] + (8 - row)
+        };
+
+        board[row][col] = tile;
     }
+}
 
-    // BERGE
-    for (let i = 0; i < 18; i++) {
-        const mountain = BABYLON.MeshBuilder.CreateCylinder(
-            "Berg",
-            {
-                height: 35 + Math.random() * 35,
-                diameterTop: 0,
-                diameterBottom: 25 + Math.random() * 25,
-                tessellation: 7
-            },
-            scene
-        );
+// BRETT-RAND
 
-        const angle = (i / 18) * Math.PI * 2;
-
-        mountain.position.set(
-            Math.cos(angle) * 175,
-            12,
-            Math.sin(angle) * 175
-        );
-
-        mountain.material = i % 2 ? stoneMat : darkGrassMat;
-        mountain.isPickable = false;
-    }
-
-    // SEE
-    const lake = BABYLON.MeshBuilder.CreateCylinder(
-        "See",
-        { diameter: 34, height: 0.35, tessellation: 48 },
+function createBorder(x, z, width, depth) {
+    const border = BABYLON.MeshBuilder.CreateBox(
+        "border",
+        {
+            width,
+            height: 0.35,
+            depth
+        },
         scene
     );
 
-    lake.position.set(-48, 0.08, 30);
-    lake.material = waterMat;
+    border.position.set(x, -0.12, z);
+    border.material = materials.elfGold;
+}
 
-    // BÄUME
-    function createTree(x, z, scale = 1) {
-        const trunk = BABYLON.MeshBuilder.CreateCylinder(
-            "Baumstamm",
-            {
-                height: 4 * scale,
-                diameterTop: 0.45 * scale,
-                diameterBottom: 0.8 * scale
-            },
-            scene
-        );
+createBorder(0, -5.1, 10.3, 0.3);
+createBorder(0, 5.1, 10.3, 0.3);
+createBorder(-5.1, 0, 0.3, 10.3);
+createBorder(5.1, 0, 0.3, 10.3);
 
-        trunk.position.set(x, 2 * scale, z);
-        trunk.material = trunkMat;
+// DEKORATION
 
-        const crown = BABYLON.MeshBuilder.CreateSphere(
-            "Baumkrone",
-            { diameter: 4.5 * scale, segments: 7 },
-            scene
-        );
+for (let i = 0; i < 12; i++) {
+    const crystal = BABYLON.MeshBuilder.CreatePolyhedron(
+        "crystal",
+        { type: 1, size: 0.35 },
+        scene
+    );
 
-        crown.position.set(x, 4.5 * scale, z);
-        crown.material = Math.random() > 0.5 ? leafMat : leafLightMat;
+    const side = i % 2 === 0 ? -1 : 1;
 
-        const crown2 = BABYLON.MeshBuilder.CreateSphere(
-            "BaumkroneOben",
-            { diameter: 3.1 * scale, segments: 7 },
-            scene
-        );
+    crystal.position.set(
+        side * (6 + Math.random() * 2),
+        -0.1,
+        (Math.random() - 0.5) * 9
+    );
 
-        crown2.position.set(
-            x + 0.5 * scale,
-            6 * scale,
-            z - 0.3 * scale
-        );
+    crystal.material = i % 2 === 0
+        ? materials.elfGold
+        : materials.shadowGold;
+}
 
-        crown2.material = leafMat;
-    }
+// FIGUREN
 
-    for (let i = 0; i < 150; i++) {
-        const x = (Math.random() - 0.5) * 380;
-        const z = (Math.random() - 0.5) * 380;
+const pieces = [];
 
-        if (Math.abs(x) < 13 && Math.abs(z) < 25) continue;
-        if (Math.abs(x - 48) < 28 && Math.abs(z + 45) < 28) continue;
-        if (Math.abs(x + 48) < 22 && Math.abs(z - 30) < 22) continue;
+function createPieceMesh(type, side, row, col) {
+    const root = new BABYLON.TransformNode(
+        "piece_" + type + "_" + side,
+        scene
+    );
 
-        createTree(x, z, 0.75 + Math.random() * 0.8);
-    }
+    const isElf = side === "w";
 
-    // BURG
-    function box(name, w, h, d, x, y, z, mat) {
-        const mesh = BABYLON.MeshBuilder.CreateBox(
+    const armor = isElf ? materials.elf : materials.shadow;
+    const metal = isElf ? materials.elfGold : materials.shadowGold;
+    const skin = isElf ? materials.elfSkin : materials.shadowSkin;
+
+    const pos = squarePosition(row, col);
+
+    root.position.set(pos.x, 0, pos.z);
+
+    function cylinder(name, height, top, bottom, y, mat) {
+        const mesh = BABYLON.MeshBuilder.CreateCylinder(
             name,
-            { width: w, height: h, depth: d },
+            {
+                height,
+                diameterTop: top,
+                diameterBottom: bottom,
+                tessellation: 12
+            },
             scene
         );
 
+        mesh.parent = root;
+        mesh.position.y = y;
+        mesh.material = mat;
+
+        return mesh;
+    }
+
+    function sphere(name, diameter, x, y, z, mat) {
+        const mesh = BABYLON.MeshBuilder.CreateSphere(
+            name,
+            { diameter, segments: 12 },
+            scene
+        );
+
+        mesh.parent = root;
         mesh.position.set(x, y, z);
         mesh.material = mat;
 
         return mesh;
     }
 
-    function tower(x, z) {
-        const base = BABYLON.MeshBuilder.CreateCylinder(
-            "BurgTurm",
-            { height: 13, diameter: 5, tessellation: 12 },
+    function box(name, width, height, depth, x, y, z, mat) {
+        const mesh = BABYLON.MeshBuilder.CreateBox(
+            name,
+            { width, height, depth },
             scene
         );
 
-        base.position.set(x, 6.5, z);
-        base.material = castleMat;
+        mesh.parent = root;
+        mesh.position.set(x, y, z);
+        mesh.material = mat;
 
-        const roof = BABYLON.MeshBuilder.CreateCylinder(
-            "Turmdach",
-            {
-                height: 5,
-                diameterTop: 0,
-                diameterBottom: 6,
-                tessellation: 12
-            },
-            scene
+        return mesh;
+    }
+
+    // SOCKEL
+    cylinder("Sockel", 0.18, 0.85, 0.95, 0.09, materials.base);
+    cylinder("SockelGold", 0.08, 0.76, 0.85, 0.22, metal);
+
+    // KÖRPER
+    const bodyHeight = type === "k" ? 1.5 : 1.05;
+
+    cylinder(
+        "Körper",
+        bodyHeight,
+        0.35,
+        0.68,
+        0.22 + bodyHeight / 2,
+        armor
+    );
+
+    // KOPF
+    const headY = 0.22 + bodyHeight + 0.3;
+
+    sphere("Kopf", 0.48, 0, headY, 0, skin);
+
+    // FIGURENSPEZIFISCHE DETAILS
+
+    if (type === "p") {
+        // BAUER: ELFENKRIEGER / GOBLIN
+        sphere("Helm", 0.5, 0, headY + 0.18, 0, armor);
+
+        const spear = box(
+            "Speer",
+            0.08, 1.25, 0.08,
+            0.42, 0.95, 0,
+            metal
         );
 
-        roof.position.set(x, 15.5, z);
-        roof.material = roofMat;
+        spear.rotation.z = -0.15;
+    }
+
+    if (type === "n") {
+        // SPRINGER: GREIFENREITER / WOLFSREITER
+        sphere("Tierkörper", 0.8, 0, 0.85, 0, metal);
+
+        sphere("Tierkopf", 0.45, 0.1, 1.2, 0.28, armor);
+
+        const ear1 = box(
+            "Ohr1", 0.12, 0.35, 0.12,
+            -0.13, 1.55, 0.3, metal
+        );
+
+        const ear2 = box(
+            "Ohr2", 0.12, 0.35, 0.12,
+            0.25, 1.55, 0.3, metal
+        );
+
+        ear1.rotation.z = -0.2;
+        ear2.rotation.z = 0.2;
+    }
+
+    if (type === "b") {
+        // LÄUFER: ZAUBERER / SCHATTENSCHAMANE
+        cylinder(
+            "Zauberhut",
+            0.8,
+            0,
+            0.7,
+            headY + 0.5,
+            armor
+        );
+
+        sphere(
+            "Kristall",
+            0.22,
+            0,
+            headY + 0.95,
+            0,
+            metal
+        );
+
+        cylinder(
+            "Magierstab",
+            1.5,
+            0.07,
+            0.07,
+            0.9,
+            metal
+        ).position.x = 0.48;
+    }
+
+    if (type === "r") {
+        // TURM: TROLL / OGRE
+        sphere("LinkeSchulter", 0.45, -0.35, 1.15, 0, metal);
+        sphere("RechteSchulter", 0.45, 0.35, 1.15, 0, metal);
+
+        cylinder(
+            "Helm",
+            0.5,
+            0.5,
+            0.7,
+            headY + 0.25,
+            armor
+        );
 
         box(
-            "Turmfenster",
-            0.7, 2.2, 0.15,
-            x, 8, z - 2.52,
-            roofMat
+            "Schild",
+            0.65, 0.9, 0.16,
+            0.48, 0.9, 0.35,
+            metal
         );
     }
 
-    const castleX = 48;
-    const castleZ = -45;
-
-    box("BurgmauerHinten", 48, 10, 3,
-        castleX, 5, castleZ + 20, castleMat);
-
-    box("BurgmauerLinks", 3, 10, 40,
-        castleX - 22.5, 5, castleZ, castleMat);
-
-    box("BurgmauerRechts", 3, 10, 40,
-        castleX + 22.5, 5, castleZ, castleMat);
-
-    box("BurgmauerVorneLinks", 17, 10, 3,
-        castleX - 15.5, 5, castleZ - 20, castleMat);
-
-    box("BurgmauerVorneRechts", 17, 10, 3,
-        castleX + 15.5, 5, castleZ - 20, castleMat);
-
-    tower(castleX - 22, castleZ - 20);
-    tower(castleX + 22, castleZ - 20);
-    tower(castleX - 22, castleZ + 20);
-    tower(castleX + 22, castleZ + 20);
-
-    box("Hauptgebaeude", 17, 17, 15,
-        castleX, 8.5, castleZ + 2, castleMat);
-
-    const mainRoof = BABYLON.MeshBuilder.CreateCylinder(
-        "Hauptdach",
-        {
-            height: 8,
-            diameterTop: 0,
-            diameterBottom: 20,
-            tessellation: 4
-        },
-        scene
-    );
-
-    mainRoof.rotation.y = Math.PI / 4;
-    mainRoof.position.set(castleX, 21, castleZ + 2);
-    mainRoof.material = roofMat;
-
-    for (const x of [castleX - 5, castleX, castleX + 5]) {
-        box("Burgfenster", 1.2, 2.6, 0.15,
-            x, 9, castleZ - 5.58, roofMat);
-    }
-
-    // WEG
-    const roadMat = material("Weg", "#A99A7E");
-
-    const road = BABYLON.MeshBuilder.CreateGround(
-        "WegZurBurg",
-        { width: 9, height: 65 },
-        scene
-    );
-
-    road.position.set(25, 0.04, -13);
-    road.rotation.y = -0.35;
-    road.material = roadMat;
-
-    // FELSEN
-    for (let i = 0; i < 45; i++) {
-        const rock = BABYLON.MeshBuilder.CreatePolyhedron(
-            "Fels",
-            { type: 1, size: 1 + Math.random() * 2.5 },
-            scene
-        );
-
-        rock.position.set(
-            (Math.random() - 0.5) * 350,
+    if (type === "q") {
+        // DAME: HOCHELFEN-ZAUBERIN / DUNKLE HEXE
+        cylinder(
+            "Krone",
+            0.5,
+            0.15,
             0.7,
-            (Math.random() - 0.5) * 350
+            headY + 0.38,
+            metal
         );
 
-        rock.scaling.y = 0.5 + Math.random();
-        rock.rotation.set(
-            Math.random(),
-            Math.random(),
-            Math.random()
-        );
+        for (let i = 0; i < 3; i++) {
+            const spike = BABYLON.MeshBuilder.CreateCylinder(
+                "Kronenspitze",
+                {
+                    height: 0.55,
+                    diameterTop: 0,
+                    diameterBottom: 0.18,
+                    tessellation: 6
+                },
+                scene
+            );
 
-        rock.material = stoneMat;
-    }
-
-    // MAGIER
-    const player = new BABYLON.TransformNode("Magier", scene);
-    player.position.set(0, 0, 0);
-
-    const robe = BABYLON.MeshBuilder.CreateCylinder(
-        "Umhang",
-        {
-            height: 2.1,
-            diameterTop: 0.8,
-            diameterBottom: 1.35,
-            tessellation: 12
-        },
-        scene
-    );
-
-    robe.parent = player;
-    robe.position.y = 1.05;
-    robe.material = robeMat;
-
-    const robeTrim = BABYLON.MeshBuilder.CreateCylinder(
-        "UmhangSaum",
-        {
-            height: 0.12,
-            diameter: 1.34,
-            tessellation: 12
-        },
-        scene
-    );
-
-    robeTrim.parent = player;
-    robeTrim.position.y = 0.12;
-    robeTrim.material = robeLightMat;
-
-    const head = BABYLON.MeshBuilder.CreateSphere(
-        "Kopf",
-        { diameter: 0.72, segments: 16 },
-        scene
-    );
-
-    head.parent = player;
-    head.position.y = 2.35;
-    head.material = skinMat;
-
-    const hat = BABYLON.MeshBuilder.CreateCylinder(
-        "Hut",
-        {
-            height: 1.15,
-            diameterTop: 0.05,
-            diameterBottom: 1.05,
-            tessellation: 12
-        },
-        scene
-    );
-
-    hat.parent = player;
-    hat.position.y = 3.05;
-    hat.material = hatMat;
-
-    const hatBrim = BABYLON.MeshBuilder.CreateCylinder(
-        "Hutkrempe",
-        { height: 0.12, diameter: 1.25, tessellation: 16 },
-        scene
-    );
-
-    hatBrim.parent = player;
-    hatBrim.position.y = 2.63;
-    hatBrim.material = hatMat;
-
-    function makeArm(side) {
-        const arm = BABYLON.MeshBuilder.CreateCylinder(
-            "Arm",
-            { height: 1.25, diameter: 0.27, tessellation: 10 },
-            scene
-        );
-
-        arm.parent = player;
-        arm.position.set(side * 0.58, 1.55, 0.05);
-        arm.rotation.z = side * -0.65;
-        arm.material = robeMat;
-
-        return arm;
-    }
-
-    makeArm(-1);
-    makeArm(1);
-
-    const wand = BABYLON.MeshBuilder.CreateCylinder(
-        "Zauberstab",
-        { height: 1.35, diameter: 0.09, tessellation: 8 },
-        scene
-    );
-
-    wand.parent = player;
-    wand.position.set(0.9, 1.65, 0.12);
-    wand.rotation.z = -0.25;
-    wand.material = woodMat;
-
-    const wandGem = BABYLON.MeshBuilder.CreateSphere(
-        "ZauberstabKristall",
-        { diameter: 0.25, segments: 10 },
-        scene
-    );
-
-    wandGem.parent = player;
-    wandGem.position.set(0.9, 2.34, 0.12);
-    wandGem.material = goldMat;
-
-    // KAMERA
-    const camera = new BABYLON.ArcRotateCamera(
-        "Spielkamera",
-        -Math.PI / 2,
-        1.12,
-        11,
-        new BABYLON.Vector3(0, 1.7, 0),
-        scene
-    );
-
-    camera.attachControl(canvas, true);
-    camera.lowerRadiusLimit = 5;
-    camera.upperRadiusLimit = 22;
-    camera.lowerBetaLimit = 0.45;
-    camera.upperBetaLimit = 1.48;
-    camera.panningSensibility = 0;
-    camera.wheelPrecision = 45;
-    camera.checkCollisions = false;
-    camera.inertia = 0.75;
-
-    // STEUERUNG
-    const keys = Object.create(null);
-
-    let health = 100;
-    let mana = 100;
-    const playerSpeed = 0.13;
-    let walkingTime = 0;
-
-    window.addEventListener("keydown", event => {
-        keys[event.key.toLowerCase()] = true;
-
-        if (["w", "a", "s", "d", " "].includes(event.key.toLowerCase())) {
-            event.preventDefault();
-        }
-    });
-
-    window.addEventListener("keyup", event => {
-        keys[event.key.toLowerCase()] = false;
-    });
-
-    window.addEventListener("blur", () => {
-        for (const key in keys) keys[key] = false;
-    });
-
-    // MAGIE
-    const fireMat = new BABYLON.StandardMaterial(
-        "FeuerMaterial",
-        scene
-    );
-
-    fireMat.diffuseColor = new BABYLON.Color3(1, 0.24, 0.025);
-    fireMat.emissiveColor = new BABYLON.Color3(1, 0.12, 0.01);
-
-    const glow = new BABYLON.GlowLayer("MagischesLeuchten", scene);
-    glow.intensity = 0.65;
-
-    function castFireball() {
-        if (mana < 18) {
-            setSpellInfo("Nicht genug Mana!");
-            return;
-        }
-
-        mana = Math.max(0, mana - 18);
-        updateHUD();
-        setSpellInfo("🔥 FEUERBALL!");
-
-        const forward = camera.getForwardRay().direction;
-
-        const start = player.position
-            .add(new BABYLON.Vector3(0, 1.8, 0))
-            .add(forward.scale(1.2));
-
-        const orb = BABYLON.MeshBuilder.CreateSphere(
-            "Feuerball",
-            { diameter: 0.8, segments: 12 },
-            scene
-        );
-
-        orb.position.copyFrom(start);
-        orb.material = fireMat;
-
-        const light = new BABYLON.PointLight(
-            "Feuerlicht",
-            orb.position.clone(),
-            scene
-        );
-
-        light.diffuse = new BABYLON.Color3(1, 0.25, 0.03);
-        light.intensity = 1.8;
-        light.range = 12;
-
-        const direction = forward.normalize();
-        let age = 0;
-
-        const observer = scene.onBeforeRenderObservable.add(() => {
-            const dt = engine.getDeltaTime() / 1000;
-            age += dt;
-
-            orb.position.addInPlace(direction.scale(22 * dt));
-            light.position.copyFrom(orb.position);
-
-            if (Math.random() < 0.75) {
-                const spark = BABYLON.MeshBuilder.CreateSphere(
-                    "Feuerfunke",
-                    {
-                        diameter: 0.13 + Math.random() * 0.18,
-                        segments: 5
-                    },
-                    scene
-                );
-
-                spark.position.copyFrom(orb.position);
-                spark.material = fireMat;
-
-                const drift = new BABYLON.Vector3(
-                    (Math.random() - 0.5) * 1.8,
-                    (Math.random() - 0.5) * 1.8,
-                    (Math.random() - 0.5) * 1.8
-                );
-
-                let life = 0;
-
-                const sparkObserver =
-                    scene.onBeforeRenderObservable.add(() => {
-                        const step = engine.getDeltaTime() / 1000;
-                        life += step;
-
-                        spark.position.addInPlace(drift.scale(step));
-                        spark.scaling.scaleInPlace(0.96);
-
-                        if (life > 0.45) {
-                            scene.onBeforeRenderObservable.remove(sparkObserver);
-                            spark.dispose();
-                        }
-                    });
-            }
-
-            if (age > 2.2 || orb.position.length() > 150) {
-                scene.onBeforeRenderObservable.remove(observer);
-                orb.dispose();
-                light.dispose();
-            }
-        });
-    }
-
-    window.addEventListener("keydown", event => {
-        if (event.key.toLowerCase() === "q" && !event.repeat) {
-            castFireball();
-        }
-    });
-
-    // ZAUBER ZEICHNEN
-    let drawing = false;
-    let drawPoints = [];
-    let drawingCanvas;
-    let drawingContext;
-
-    function createDrawingOverlay() {
-        drawingCanvas = document.createElement("canvas");
-        drawingCanvas.id = "spellDrawing";
-
-        drawingCanvas.style.cssText =
-            "position:absolute;inset:0;width:100%;height:100%;" +
-            "pointer-events:none;z-index:5;";
-
-        document.body.appendChild(drawingCanvas);
-        drawingContext = drawingCanvas.getContext("2d");
-
-        function resizeDrawing() {
-            drawingCanvas.width =
-                Math.floor(window.innerWidth * devicePixelRatio);
-
-            drawingCanvas.height =
-                Math.floor(window.innerHeight * devicePixelRatio);
-
-            drawingContext.setTransform(
-                devicePixelRatio,
-                0,
-                0,
-                devicePixelRatio,
-                0,
+            spike.parent = root;
+            spike.position.set(
+                (i - 1) * 0.22,
+                headY + 0.85,
                 0
             );
+
+            spike.material = metal;
         }
 
-        resizeDrawing();
-        window.addEventListener("resize", resizeDrawing);
+        sphere("MagischerKristall", 0.3, 0, headY + 1.15, 0, metal);
     }
 
-    createDrawingOverlay();
-
-    canvas.addEventListener("pointerdown", event => {
-        if (event.button !== 0) return;
-
-        drawing = true;
-        drawPoints = [{
-            x: event.clientX,
-            y: event.clientY
-        }];
-
-        drawingContext.clearRect(
-            0,
-            0,
-            window.innerWidth,
-            window.innerHeight
+    if (type === "k") {
+        // KÖNIG: ELFENKÖNIG / ORKKÖNIG
+        cylinder(
+            "Krone",
+            0.55,
+            0.2,
+            0.75,
+            headY + 0.35,
+            metal
         );
 
-        canvas.setPointerCapture(event.pointerId);
+        box(
+            "Kreuz",
+            0.15, 0.65, 0.15,
+            0, headY + 0.95, 0,
+            metal
+        );
+
+        box(
+            "KreuzQuer",
+            0.55, 0.14, 0.15,
+            0, headY + 1.05, 0,
+            metal
+        );
+
+        sphere("Augenlicht", 0.1, -0.12, headY, 0.22, metal);
+        sphere("Augenlicht2", 0.1, 0.12, headY, 0.22, metal);
+    }
+
+    // FIGUR AUSWÄHLBAR MACHEN
+    root.getChildMeshes().forEach(mesh => {
+        mesh.isPickable = true;
+        mesh.metadata = {
+            pieceRoot: root
+        };
     });
 
-    canvas.addEventListener("pointermove", event => {
-        if (!drawing) return;
+    root.metadata = {
+        row,
+        col,
+        side,
+        type
+    };
 
-        drawPoints.push({
-            x: event.clientX,
-            y: event.clientY
+    return root;
+}
+
+// SCHACH-ENGINE
+
+if (typeof Chess === "undefined") {
+    document.getElementById("message").textContent =
+        "Fehler: Schachregeln konnten nicht geladen werden.";
+    throw new Error("Chess.js konnte nicht geladen werden.");
+}
+
+const chess = new Chess();
+
+let selectedSquare = null;
+let selectedPiece = null;
+let possibleMoves = [];
+let animations = [];
+
+const pieceNames = {
+    k: "König",
+    q: "Dame",
+    r: "Turm",
+    b: "Läufer",
+    n: "Springer",
+    p: "Bauer"
+};
+
+// FIGUREN AUFSTELLEN
+
+function createAllPieces() {
+    pieces.forEach(piece => piece.mesh.dispose());
+    pieces.length = 0;
+
+    const position = chess.board();
+
+    for (let row = 0; row < 8; row++) {
+        for (let col = 0; col < 8; col++) {
+            const data = position[row][col];
+
+            if (!data) continue;
+
+            const mesh = createPieceMesh(
+                data.type,
+                data.color,
+                row,
+                col
+            );
+
+            pieces.push({
+                mesh,
+                type: data.type,
+                side: data.color,
+                row,
+                col
+            });
+        }
+    }
+}
+
+// ZUGFELDER MARKIEREN
+
+let highlights = [];
+
+function clearHighlights() {
+    highlights.forEach(mesh => mesh.dispose());
+    highlights = [];
+}
+
+function highlightSquare(row, col, mat, height = 0.04) {
+    const marker = BABYLON.MeshBuilder.CreateBox(
+        "highlight",
+        {
+            width: squareSize * 0.75,
+            height,
+            depth: squareSize * 0.75
+        },
+        scene
+    );
+
+    const pos = squarePosition(row, col);
+
+    marker.position.set(pos.x, 0.06, pos.z);
+    marker.material = mat;
+    marker.isPickable = false;
+
+    highlights.push(marker);
+}
+
+function showPossibleMoves(square) {
+    clearHighlights();
+
+    const moves = chess.moves({
+        square,
+        verbose: true
+    });
+
+    possibleMoves = moves;
+
+    for (const move of moves) {
+        const row = 8 - Number(move.to[1]);
+        const col = "abcdefgh".indexOf(move.to[0]);
+
+        highlightSquare(row, col, materials.possible);
+    }
+
+    const selectedRow = 8 - Number(square[1]);
+    const selectedCol = "abcdefgh".indexOf(square[0]);
+
+    highlightSquare(
+        selectedRow,
+        selectedCol,
+        materials.selected,
+        0.06
+    );
+}
+
+// FIGUREN BEWEGEN
+
+function movePiece(from, to) {
+    const oldPiece = chess.get(to);
+
+    if (oldPiece) {
+        const captured = pieces.find(p =>
+            p.row === 8 - Number(to[1]) &&
+            p.col === "abcdefgh".indexOf(to[0])
+        );
+
+        if (captured) {
+            captured.mesh.dispose();
+
+            const index = pieces.indexOf(captured);
+            if (index !== -1) pieces.splice(index, 1);
+        }
+    }
+
+    const result = chess.move({
+        from,
+        to,
+        promotion: "q"
+    });
+
+    if (!result) return;
+
+    const fromRow = 8 - Number(from[1]);
+    const fromCol = "abcdefgh".indexOf(from[0]);
+
+    const toRow = 8 - Number(to[1]);
+    const toCol = "abcdefgh".indexOf(to[0]);
+
+    const movingPiece = pieces.find(p =>
+        p.row === fromRow &&
+        p.col === fromCol
+    );
+
+    if (movingPiece) {
+        const target = squarePosition(toRow, toCol);
+
+        animations.push({
+            mesh: movingPiece.mesh,
+            start: movingPiece.mesh.position.clone(),
+            end: new BABYLON.Vector3(target.x, 0, target.z),
+            time: 0
         });
 
-        drawingContext.strokeStyle = "#ffb347";
-        drawingContext.lineWidth = 6;
-        drawingContext.lineCap = "round";
-        drawingContext.lineJoin = "round";
-        drawingContext.shadowColor = "#ff6b16";
-        drawingContext.shadowBlur = 18;
-
-        drawingContext.beginPath();
-
-        const previous = drawPoints[drawPoints.length - 2];
-
-        drawingContext.moveTo(previous.x, previous.y);
-        drawingContext.lineTo(event.clientX, event.clientY);
-        drawingContext.stroke();
-    });
-
-    function finishDrawing() {
-        if (!drawing) return;
-
-        drawing = false;
-
-        if (drawPoints.length > 5) {
-            castFireball();
-        }
-
-        window.setTimeout(() => {
-            drawingContext.clearRect(
-                0,
-                0,
-                window.innerWidth,
-                window.innerHeight
-            );
-        }, 500);
-
-        drawPoints = [];
+        movingPiece.row = toRow;
+        movingPiece.col = toCol;
     }
 
-    canvas.addEventListener("pointerup", finishDrawing);
-    canvas.addEventListener("pointercancel", finishDrawing);
-
-    // HUD
-    function setSpellInfo(text) {
-        const element = document.getElementById("spellInfo");
-
-        if (element) {
-            element.textContent = text;
-        }
+    // Bei Rochade und Umwandlung die Figuren neu aufbauen
+    if (result.flags.includes("k") ||
+        result.flags.includes("q") ||
+        result.flags.includes("p")) {
+        setTimeout(createAllPieces, 500);
     }
 
-    function updateHUD() {
-        const hp = document.getElementById("healthBar");
-        const mp = document.getElementById("manaBar");
+    selectedSquare = null;
+    selectedPiece = null;
+    possibleMoves = [];
 
-        if (hp) hp.style.width = health + "%";
-        if (mp) mp.style.width = mana + "%";
-    }
-
-    // SPIELSCHLEIFE
-    scene.onBeforeRenderObservable.add(() => {
-        const dt = Math.min(
-            engine.getDeltaTime() / 16.6667,
-            2
-        );
-
-        const forward = camera.getForwardRay().direction;
-
-        const flatForward = new BABYLON.Vector3(
-            forward.x,
-            0,
-            forward.z
-        ).normalize();
-
-        const right = BABYLON.Vector3.Cross(
-            flatForward,
-            BABYLON.Axis.Y
-        ).normalize();
-
-        let move = BABYLON.Vector3.Zero();
-
-        if (keys.w || keys.arrowup) {
-            move.addInPlace(flatForward);
-        }
-
-        if (keys.s || keys.arrowdown) {
-            move.subtractInPlace(flatForward);
-        }
-
-        if (keys.d || keys.arrowright) {
-            move.addInPlace(right);
-        }
-
-        if (keys.a || keys.arrowleft) {
-            move.subtractInPlace(right);
-        }
-
-        if (move.lengthSquared() > 0) {
-            move.normalize();
-
-            const sprint = keys.shift ? 1.75 : 1;
-
-            player.position.addInPlace(
-                move.scale(playerSpeed * sprint * dt)
-            );
-
-            player.rotation.y = Math.atan2(move.x, move.z);
-
-            walkingTime += dt * 0.18;
-
-            robe.position.y =
-                1.05 + Math.sin(walkingTime * 2) * 0.025;
-        }
-
-        player.position.x = BABYLON.Scalar.Clamp(
-            player.position.x,
-            -198,
-            198
-        );
-
-        player.position.z = BABYLON.Scalar.Clamp(
-            player.position.z,
-            -198,
-            198
-        );
-
-        camera.target = BABYLON.Vector3.Lerp(
-            camera.target,
-            player.position.add(
-                new BABYLON.Vector3(0, 1.7, 0)
-            ),
-            0.12
-        );
-
-        if (mana < 100) {
-            mana = Math.min(100, mana + 0.035 * dt);
-            updateHUD();
-        }
-    });
-
-    // START
-    const loading = document.getElementById("loading");
-
-    if (loading) {
-        window.setTimeout(() => {
-            loading.style.opacity = "0";
-
-            window.setTimeout(() => {
-                loading.remove();
-            }, 1000);
-        }, 700);
-    }
-
-    engine.runRenderLoop(() => {
-        scene.render();
-    });
-
-    window.addEventListener("resize", () => {
-        engine.resize();
-    });
-
-    setSpellInfo("🪄 WASD bewegen · Q oder Linksklick zeichnen");
+    clearHighlights();
     updateHUD();
-})();
+
+    if (chess.isCheckmate()) {
+        document.getElementById("message").textContent =
+            "🏆 SCHACHMATT! " +
+            (chess.turn() === "w"
+                ? "Die Schattenhorde gewinnt!"
+                : "Das Elfenreich gewinnt!");
+    } else if (chess.isDraw()) {
+        document.getElementById("message").textContent =
+            "Unentschieden!";
+    } else if (chess.in_check()) {
+        document.getElementById("message").textContent =
+            "⚡ SCHACH! Der König ist bedroht!";
+    } else {
+        document.getElementById("message").textContent =
+            "Zug: " + pieceNames[result.piece];
+    }
+}
+
+// SPIELFELD KLICKEN
+
+canvas.addEventListener("pointerdown", event => {
+    const pick = scene.pick(
+        scene.pointerX,
+        scene.pointerY,
+        mesh => mesh.metadata &&
+            mesh.metadata.square !== undefined
+    );
+
+    if (!pick || !pick.hit || !pick.pickedMesh) {
+        const piecePick = scene.pick(
+            scene.pointerX,
+            scene.pointerY,
+            mesh => mesh.metadata &&
+                mesh.metadata.pieceRoot
+        );
+
+        if (piecePick && piecePick.hit) {
+            const root = piecePick.pickedMesh.metadata.pieceRoot;
+            const data = root.metadata;
+
+            handleSquare(data.row, data.col);
+        }
+
+        return;
+    }
+
+    const data = pick.pickedMesh.metadata;
+    handleSquare(data.row, data.col);
+});
+
+function handleSquare(row, col) {
+    const square = "abcdefgh"[col] + (8 - row);
+    const piece = chess.get(square);
+
+    // Wenn bereits eine Figur ausgewählt ist
+    if (selectedSquare) {
+        const valid = possibleMoves.find(m => m.to === square);
+
+        if (valid) {
+            movePiece(selectedSquare, square);
+            return;
+        }
+    }
+
+    // Neue Figur auswählen
+    if (piece && piece.color === chess.turn()) {
+        selectedSquare = square;
+        selectedPiece = piece;
+
+        showPossibleMoves(square);
+
+        document.getElementById("message").textContent =
+            pieceNames[piece.type] + " ausgewählt – wähle ein Zielfeld.";
+
+        return;
+    }
+
+    selectedSquare = null;
+    selectedPiece = null;
+    possibleMoves = [];
+
+    clearHighlights();
+
+    document.getElementById("message").textContent =
+        "Wähle eine eigene Figur aus.";
+}
+
+// HUD
+
+function updateHUD() {
+    const turn = document.getElementById("turn");
+
+    if (chess.turn() === "w") {
+        turn.textContent = "🌿 Das Elfenreich ist am Zug";
+    } else {
+        turn.textContent = "🔥 Die Schattenhorde ist am Zug";
+    }
+}
+
+// NEUES SPIEL
+
+document.getElementById("restart").addEventListener("click", () => {
+    chess.reset();
+
+    selectedSquare = null;
+    selectedPiece = null;
+    possibleMoves = [];
+
+    clearHighlights();
+
+    animations = [];
+
+    createAllPieces();
+    updateHUD();
+
+    document.getElementById("message").textContent =
+        "Ein neues Spiel beginnt!";
+});
+
+// ANIMATIONEN
+
+scene.onBeforeRenderObservable.add(() => {
+    const dt = engine.getDeltaTime() / 1000;
+
+    for (let i = animations.length - 1; i >= 0; i--) {
+        const animation = animations[i];
+
+        animation.time += dt;
+
+        const t = Math.min(animation.time / 0.3, 1);
+        const smooth = t * t * (3 - 2 * t);
+
+        animation.mesh.position.x = BABYLON.Scalar.Lerp(
+            animation.start.x,
+            animation.end.x,
+            smooth
+        );
+
+        animation.mesh.position.z = BABYLON.Scalar.Lerp(
+            animation.start.z,
+            animation.end.z,
+            smooth
+        );
+
+        animation.mesh.position.y =
+            Math.sin(t * Math.PI) * 0.35;
+
+        if (t >= 1) {
+            animation.mesh.position.copyFrom(animation.end);
+            animations.splice(i, 1);
+        }
+    }
+});
+
+// START
+
+createAllPieces();
+updateHUD();
+
+engine.runRenderLoop(() => {
+    scene.render();
+});
+
+window.addEventListener("resize", () => {
+    engine.resize();
+});
