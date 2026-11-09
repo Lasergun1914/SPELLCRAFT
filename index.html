@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SPELLCRAFT – Open World</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.babylonjs.com/babylon.js"></script>
+</head>
+<body>
+    <div id="loading">SPELLCRAFT<br><span>Welt wird geladen ...</span></div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="hud">
+        <div class="status">
+            <span>❤️ LEBEN</span>
+            <div class="bar"><div id="healthBar"></div></div>
+        </div>
+        <div class="status">
+            <span>✨ MAGIE</span>
+            <div class="bar"><div id="manaBar"></div></div>
+        </div>
+        <div id="spellInfo">🪄 Zeichne einen Zauber!</div>
+    </div>
+
+    <div id="controls">
+        WASD: Bewegen | Maus: Kamera | Linksklick: Zauber zeichnen
+    </div>
+
+    <script src="game.js"></script>
+</body>
+</html>
